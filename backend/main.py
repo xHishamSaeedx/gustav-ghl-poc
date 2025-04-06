@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
 import json
+from fastapi.middleware.cors import CORSMiddleware
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +25,18 @@ class BookingRequest(BaseModel):
 
 # Webhook URL
 WEBHOOK_URL = "https://hook.eu2.make.com/0ny7ghk18on6y532rg2zdy1mjf47vhy2"
+
+# Add new webhook URL constant
+SECOND_WEBHOOK_URL = "https://hook.eu2.make.com/3yah0gqlux928ex5sue2bti8n58j3kdf"
+
+# Add after creating the FastAPI app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Add your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/forward-booking")
 async def forward_booking(request: BookingRequest):
@@ -61,16 +74,51 @@ async def forward_booking(request: BookingRequest):
                     detail=f"Webhook returned error status: {response.status_code}. Response: {webhook_data}"
                 )
             
-            # Get the RBTWebhookUrl directly from the response
+            # Get the RBTWebhookUrl and ClientFolder from the response
             rbt_webhook_url = webhook_data.get("RBTWebhookUrl")
+            client_folder = webhook_data.get("ClientFolder")
             
-            if not rbt_webhook_url:
+            if not rbt_webhook_url or not client_folder:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"RBTWebhookUrl not found in response. Response data: {webhook_data}"
+                    detail=f"Required data not found in response. Response data: {webhook_data}"
                 )
             
-            # Second API call to Vapi.ai tool
+            # New API call to second webhook
+            second_webhook_response = await client.post(
+                SECOND_WEBHOOK_URL,
+                json={
+                    "clientName": request.clientName,
+                    "subaccountToken": request.subaccountToken,
+                    "calendarIdValue": request.subaccountCalendarId,
+                    "locationIdValue": request.subaccountLocationId,
+                    "folderID": client_folder
+                }
+            )
+            
+            try:
+                second_webhook_data = second_webhook_response.json()
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Invalid JSON in second webhook response. Raw response: {second_webhook_response.text}"
+                )
+            
+            if second_webhook_response.status_code != 200:
+                raise HTTPException(
+                    status_code=second_webhook_response.status_code,
+                    detail=f"Second webhook returned error status: {second_webhook_response.status_code}"
+                )
+
+            # Get TZWebhookUrl from second webhook response
+            tz_webhook_url = second_webhook_data.get("TZWebhookUrl")
+            if not tz_webhook_url:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"TZWebhookUrl not found in second webhook response. Response data: {second_webhook_data}"
+                )
+
+            # First tool creation (existing code)
             vapi_response = await client.post(
                 "https://api.vapi.ai/tool",
                 headers={
@@ -92,14 +140,46 @@ async def forward_booking(request: BookingRequest):
             )
             
             vapi_data = vapi_response.json()
-            tool_id = vapi_data.get('id')
             
-            if not tool_id:
+            # Second tool creation
+            second_tool_response = await client.post(
+                "https://api.vapi.ai/tool",
+                headers={
+                    "Authorization": f"Bearer {VAPI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "type": "function",
+                    "function": {
+                        "name": "updatecustomertimezones",
+                        "description": "The tool is meant to submit the customers timezone into the crm and update it according. When a customer says their timezone or where they are in the country you are to use this tool and the properties below. When the customer tells you any of the information such as customertimezone. If any of these are available call the tool again and submit the information you are provided.",
+                        "strict": False
+                    },
+                    "server": {
+                        "url": tz_webhook_url
+                    },
+                    "async": True
+                }
+            )
+
+            try:
+                second_tool_data = second_tool_response.json()
+            except json.JSONDecodeError:
                 raise HTTPException(
                     status_code=500,
-                    detail="Tool ID not found in Vapi.ai response"
+                    detail=f"Invalid JSON in second tool response. Raw response: {second_tool_response.text}"
                 )
-            
+
+            # Get tool IDs from both responses
+            first_tool_id = vapi_data.get('id')
+            second_tool_id = second_tool_data.get('id')
+
+            if not first_tool_id or not second_tool_id:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to get tool IDs from responses"
+                )
+
             # Third API call to create assistant
             assistant_response = await client.post(
                 "https://api.vapi.ai/assistant",
@@ -117,6 +197,10 @@ async def forward_booking(request: BookingRequest):
                         "provider": "openai",
                         "model": "gpt-4o-mini",
                         "temperature": 0.7,
+                        "toolIds": [
+                            first_tool_id,
+                            second_tool_id
+                        ],
                         "messages": [
                             {
                                 "role": "system",
@@ -130,7 +214,8 @@ async def forward_booking(request: BookingRequest):
                         "voiceId": "burt"
                     },
                     "firstMessageMode": "assistant-speaks-first",
-                    "backgroundDenoisingEnabled": True
+                    "backgroundDenoisingEnabled": True,
+                    "name": "Gotcha Covered"
                 }
             )
             
@@ -153,7 +238,10 @@ async def forward_booking(request: BookingRequest):
                 "status": "success",
                 "webhook_response": response.status_code,
                 "webhook_data": webhook_data,
-                "vapi_tool_response": vapi_data,
+                "second_webhook_response": second_webhook_response.status_code,
+                "second_webhook_data": second_webhook_data,
+                "first_tool_response": vapi_data,
+                "second_tool_response": second_tool_data,
                 "assistant_response": assistant_data
             }
     
