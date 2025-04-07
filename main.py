@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import os
 import json
 from fastapi.middleware.cors import CORSMiddleware
+import datetime
 
 # Load environment variables
 load_dotenv()
@@ -255,6 +256,30 @@ async def create_workflow(request: BookingRequest):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+# Add a detailed health check endpoint
+@app.get("/health/details")
+async def detailed_health_check():
+    try:
+        # Check if environment variables are set
+        env_status = {
+            "VAPI_API_KEY": bool(VAPI_API_KEY),
+            "BOOKING_WEBHOOK_URL": bool(WEBHOOK_URL),
+            "TIMEZONE_WEBHOOK_URL": bool(SECOND_WEBHOOK_URL)
+        }
+        
+        return {
+            "status": "healthy",
+            "version": "1.0.0",
+            "environment_variables": env_status,
+            "api_name": app.title,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Health check failed: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
