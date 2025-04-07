@@ -21,7 +21,7 @@ export default function BookingForm() {
     setError("");
 
     try {
-      const response = await fetch("http://localhost:8000/forward-booking", {
+      const response = await fetch("http://localhost:8000/create-workflow", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

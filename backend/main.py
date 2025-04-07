@@ -24,22 +24,22 @@ class BookingRequest(BaseModel):
     clientName: str
 
 # Webhook URL
-WEBHOOK_URL = "https://hook.eu2.make.com/0ny7ghk18on6y532rg2zdy1mjf47vhy2"
+WEBHOOK_URL = os.getenv("BOOKING_WEBHOOK_URL")
 
 # Add new webhook URL constant
-SECOND_WEBHOOK_URL = "https://hook.eu2.make.com/3yah0gqlux928ex5sue2bti8n58j3kdf"
+SECOND_WEBHOOK_URL = os.getenv("TIMEZONE_WEBHOOK_URL")
 
 # Add after creating the FastAPI app
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Add your frontend URL
+    allow_origins=["*"],  # Add your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.post("/forward-booking")
-async def forward_booking(request: BookingRequest):
+@app.post("/create-workflow")
+async def create_workflow(request: BookingRequest):
     try:
         async with httpx.AsyncClient() as client:
             # First API call to the webhook
