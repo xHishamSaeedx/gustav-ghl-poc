@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Load environment variables
 load_dotenv()
 
-app = FastAPI(title="Booking Forwarding API")
+app = FastAPI(title="Client Workflow API")
 
 # Get API key from environment variables
 VAPI_API_KEY = os.getenv("VAPI_API_KEY")
