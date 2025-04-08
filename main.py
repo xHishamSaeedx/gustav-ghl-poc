@@ -153,6 +153,18 @@ async def create_workflow(request: BookingRequest):
                     "type": "function",
                     "function": {
                         "name": "updatecustomertimezones",
+                        "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "selectedSlot": {
+                                "type": "string",
+                                "description": " Initially, call the tool without any arguments. The tool will show you the available appointment times. Ask the user to review the available times, and When user find one user like, call this tool again, this time providing two things: selectedSlot: The specific time user chose.",
+                                "required": [
+                                        "selectedSlot"
+                                    ]
+                                }
+                            }
+                        },
                         "description": "The tool is meant to submit the customers timezone into the crm and update it according. When a customer says their timezone or where they are in the country you are to use this tool and the properties below. When the customer tells you any of the information such as customertimezone. If any of these are available call the tool again and submit the information you are provided.",
                         "strict": False
                     },
